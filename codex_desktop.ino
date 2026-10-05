@@ -34,7 +34,7 @@ static lv_obj_t *background_image;
 static lv_obj_t *dusk_image;
 static lv_obj_t *pigeon_stand_image;
 static lv_obj_t *pigeon_fly_image;
-static bool pigeon_jumping = false;
+static bool pigeon_fluttering = false;
 static lv_obj_t *quota_value;
 static lv_obj_t *quota_value_shadow;
 static lv_obj_t *quota_fresh_dot;
@@ -180,33 +180,36 @@ static void refresh_scene(bool animate)
     lv_anim_start(&fade);
 }
 
-static void pigeon_jump_step(void *obj, int32_t progress)
+static void pigeon_flutter_step(void *obj, int32_t progress)
 {
-    // A 36-pixel parabolic hop, returning exactly to the original perch.
-    int32_t height = 144 * progress * (1000 - progress) / 1000000;
-    lv_obj_set_pos((lv_obj_t *)obj, 75, 310 - height);
+    // Spread the wings in place, with only a small body lift during the flap.
+    int32_t lift = 24 * progress * (1000 - progress) / 1000000;
+    lv_obj_set_pos((lv_obj_t *)obj, 45, 261 - lift);
 }
 
-static void pigeon_jump_done(lv_anim_t *anim)
+static void pigeon_flutter_done(lv_anim_t *anim)
 {
     (void)anim;
-    lv_obj_set_pos(pigeon_stand_image, 75, 310);
-    pigeon_jumping = false;
+    lv_obj_add_flag(pigeon_fly_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(pigeon_stand_image, LV_OBJ_FLAG_HIDDEN);
+    pigeon_fluttering = false;
 }
 
 static void pigeon_tap(lv_event_t *e)
 {
     (void)e;
-    if (pigeon_jumping) return;
-    pigeon_jumping = true;
-    lv_anim_t jump;
-    lv_anim_init(&jump);
-    lv_anim_set_var(&jump, pigeon_stand_image);
-    lv_anim_set_exec_cb(&jump, pigeon_jump_step);
-    lv_anim_set_values(&jump, 0, 1000);
-    lv_anim_set_time(&jump, 650);
-    lv_anim_set_ready_cb(&jump, pigeon_jump_done);
-    lv_anim_start(&jump);
+    if (pigeon_fluttering) return;
+    pigeon_fluttering = true;
+    lv_obj_add_flag(pigeon_stand_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(pigeon_fly_image, LV_OBJ_FLAG_HIDDEN);
+    lv_anim_t flutter;
+    lv_anim_init(&flutter);
+    lv_anim_set_var(&flutter, pigeon_fly_image);
+    lv_anim_set_exec_cb(&flutter, pigeon_flutter_step);
+    lv_anim_set_values(&flutter, 0, 1000);
+    lv_anim_set_time(&flutter, 500);
+    lv_anim_set_ready_cb(&flutter, pigeon_flutter_done);
+    lv_anim_start(&flutter);
 }
 
 static void scene_tap(lv_event_t *e)
