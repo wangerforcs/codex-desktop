@@ -1,0 +1,12 @@
+# Local secrets and personal reference photos.
+quota_config.h
+pictures/
+
+# Generated local files.
+__pycache__/
+build/
+*.bin
+*.elf
+*.map
+Thumbs.db
+.DS_Store
