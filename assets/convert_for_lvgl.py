@@ -1,4 +1,4 @@
-"""Convert the generated source PNGs to LVGL 8.4 RGB565 assets.
+"""Convert Prague scenes and pigeon sprites to LVGL 8.4 RGB565 assets.
 
 This is a mechanical firmware encoding step. Requires Pillow.
 Run from this directory: python convert_for_lvgl.py
@@ -10,28 +10,29 @@ ASSETS = Path(__file__).resolve().parent
 ART = ASSETS.parent / "src" / "art"
 ART.mkdir(parents=True, exist_ok=True)
 
-# The checked-in transparent title PNG is the source of truth. Regeneration
-# must not require a font installed at a machine-specific absolute path.
-
 items = [
-    ("prague_day_source.png", "prague_day", (800, 480), False),
-    ("prague_dusk_source.png", "prague_dusk", (800, 480), False),
-    ("prague_title_source.png", "prague_title", (132, 48), True),
+    ("prague_day_clear_source.png", "prague_day", (800, 480), False, False),
+    ("prague_dusk_clear_source.png", "prague_dusk", (800, 480), False, False),
+    ("pigeon_stand_source.png", "pigeon_stand", (132, 116), True, True),
+    ("pigeon_fly_source.png", "pigeon_fly", (156, 130), True, True),
 ]
 
-header = '''#pragma once
-#include "lvgl.h"
-extern const lv_img_dsc_t prague_day;
-extern const lv_img_dsc_t prague_dusk;
-extern const lv_img_dsc_t prague_title;
-'''
+header = '#pragma once\n#include "lvgl.h"\n'
+for _, name, _, _, _ in items:
+    header += f'extern const lv_img_dsc_t {name};\n'
 (ART / "prague_images.h").write_text(header, encoding="ascii")
 
 with (ART / "prague_images.cpp").open("w", encoding="ascii", newline="\n") as out:
     out.write('#include "prague_images.h"\n')
-    for filename, name, size, alpha in items:
+    for filename, name, size, alpha, contain in items:
         image = Image.open(ASSETS / filename).convert("RGBA")
-        image = ImageOps.fit(image, size, method=Image.Resampling.LANCZOS)
+        if contain:
+            fitted = ImageOps.contain(image, size, method=Image.Resampling.LANCZOS)
+            image = Image.new("RGBA", size, (0, 0, 0, 0))
+            image.alpha_composite(fitted, ((size[0] - fitted.width) // 2,
+                                           (size[1] - fitted.height) // 2))
+        else:
+            image = ImageOps.fit(image, size, method=Image.Resampling.LANCZOS)
         image.save(ASSETS / f"{name}_preview.png")
         pixels = list(image.getdata())
         out.write(f"static const uint8_t {name}_map[] = {{\n")

@@ -1,6 +1,6 @@
 # Codex Desktop · 布拉格
 
-面向 Waveshare ESP32-S3-Touch-LCD-4.3C 的独立 Arduino 项目。屏幕显示布拉格主题画面、Codex 套餐用量的短/长窗口剩余百分比及重置日期时间；触屏可切换日景和傍晚。项目不需要原厂固件，也不会读取或上传原厂固件备份。
+面向 Waveshare ESP32-S3-Touch-LCD-4.3C 的独立 Arduino 项目。屏幕显示布拉格主题画面、Codex 套餐用量的短/长窗口剩余百分比及重置日期时间，周额度显示为“百分比 + 7D”。点击背景切换日景和傍晚；点击鸽子会让它原地跳一下再落回原处；点击额度文字区域可立即请求刷新。项目不需要原厂固件，也不会读取或上传原厂固件备份。
 
 ## 目录
 
@@ -41,6 +41,6 @@ python .\quota_bridge.py
 
 ## 图片与来源
 
-布拉格日景及傍晚图片是参考项目作者拍摄的查理大桥与鸽子照片生成的艺术画面，不是原照片直接裁切。`assets/prague_title_source.png` 是透明中文标题图。资源已经以 RGB565 编入 `src/art/prague_images.cpp`，运行时不需要 SD 卡。若修改源 PNG，可在项目目录运行 `python assets/convert_for_lvgl.py`（需要 Pillow）重新生成图片代码与预览图；转换脚本不依赖 Windows 字体或机器绝对路径。
+布拉格日景及傍晚图片是参考项目作者拍摄的查理大桥与鸽子照片生成的艺术画面，不是原照片直接裁切。当前固件使用新增的 `prague_day_clear_source.png`、`prague_dusk_clear_source.png` 无鸽子背景，以及 `pigeon_stand_source.png`、`pigeon_fly_source.png` 透明鸽子素材；原始带鸽子版本仍保留在 `assets/`。标题现由 LVGL 字体绘制为 `PRAGUE`，旧的透明中文标题 PNG 也保留作历史素材。资源已经以 RGB565 编入 `src/art/prague_images.cpp`，运行时不需要 SD 卡。若修改源 PNG，可在项目目录运行 `python assets/convert_for_lvgl.py`（需要 Pillow）重新生成图片代码与预览图；转换脚本不依赖 Windows 字体或机器绝对路径。
 
 LCD、触摸相关代码基于 Waveshare 官方 Arduino 示例及 Espressif 驱动，原有版权标识保留；相关 Apache-2.0 文本见 `THIRD_PARTY_APACHE_2_0.txt`。本目录没有替你选定整个项目及生成图片的公开许可，发布到 GitHub 前请自行决定许可证与图片使用条款。

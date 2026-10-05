@@ -18,7 +18,7 @@ static const lv_color_t PALE = LV_COLOR_MAKE(199, 226, 231);
 static const lv_color_t GOLD = LV_COLOR_MAKE(242, 203, 133);
 
 static bool day_scene = true;
-static int quota = -1, quota_window = 0, quota_reset = 0;
+static int quota = -1, quota_reset = 0;
 static int secondary_quota = -1, secondary_window = 0, secondary_reset = 0;
 static bool quota_live = false;
 static bool wifi_started = false;
@@ -29,18 +29,23 @@ static WiFiUDP discovery_udp;
 static IPAddress bridge_ip;
 static uint32_t last_wifi_attempt = 0, last_fetch_attempt = 0;
 static uint32_t last_discovery = 0, last_success = 0;
-static uint32_t message_until = 0;
 
 static lv_obj_t *background_image;
+static lv_obj_t *dusk_image;
+static lv_obj_t *pigeon_stand_image;
+static lv_obj_t *pigeon_fly_image;
+static bool pigeon_jumping = false;
 static lv_obj_t *quota_value;
-static lv_obj_t *quota_source;
+static lv_obj_t *quota_value_shadow;
+static lv_obj_t *quota_fresh_dot;
 static lv_obj_t *quota_bar;
 static lv_obj_t *quota_detail;
-static lv_obj_t *quota_window_label;
+static lv_obj_t *quota_detail_shadow;
 static lv_obj_t *secondary_label;
+static lv_obj_t *secondary_label_shadow;
 static lv_obj_t *secondary_reset_label;
+static lv_obj_t *secondary_reset_shadow;
 static lv_obj_t *secondary_bar;
-static lv_obj_t *status_label;
 
 static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h,
                      lv_color_t color, int radius)
@@ -70,10 +75,13 @@ static lv_obj_t *label(lv_obj_t *parent, const char *text, int x, int y,
     return o;
 }
 
-static void status(const char *text)
+// A dark offset copy keeps light text readable on both bright and dusk photos.
+static lv_obj_t *photo_label(lv_obj_t *parent, const char *text, int x, int y,
+                              int w, int h, const lv_font_t *font,
+                              lv_color_t color, lv_obj_t **shadow)
 {
-    lv_label_set_text(status_label, text);
-    message_until = millis() + 3500;
+    *shadow = label(parent, text, x + 2, y + 2, w, h, font, NAVY);
+    return label(parent, text, x, y, w, h, font, color);
 }
 
 static bool valid_reset_code(int code)
@@ -99,80 +107,119 @@ static void format_reset(int code, char *output, size_t size)
 
 static void refresh_quota()
 {
-    bool configured = QUOTA_WIFI_SSID[0];
+    lv_obj_set_style_bg_color(quota_fresh_dot, quota_live ? CYAN : PALE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(quota_fresh_dot,
+                            quota < 0 ? LV_OPA_TRANSP : LV_OPA_COVER, LV_PART_MAIN);
     if (quota < 0) {
         lv_label_set_text(quota_value, "--%");
-        lv_label_set_text(quota_source, configured ? "WAITING / LAN" : "SET WIFI / PC");
-        lv_label_set_text(quota_window_label, "NO DATA");
-        lv_label_set_text(quota_detail, "RESET --/-- --:--");
+        lv_label_set_text(quota_value_shadow, "--%");
+        lv_label_set_text(quota_detail, "--/-- --:--");
+        lv_label_set_text(quota_detail_shadow, "--/-- --:--");
         lv_bar_set_value(quota_bar, 0, LV_ANIM_OFF);
     } else {
         char value[10];
         snprintf(value, sizeof(value), "%d%%", quota);
         lv_label_set_text(quota_value, value);
-        lv_label_set_text(quota_source, quota_live ? "LIVE / LAN" : "STALE / LAN");
-        char detail[40];
-        if (quota_window >= 60) {
-            snprintf(detail, sizeof(detail), "%dH WINDOW", quota_window / 60);
-        } else {
-            snprintf(detail, sizeof(detail), "%dM WINDOW", quota_window);
-        }
-        lv_label_set_text(quota_window_label, detail);
+        lv_label_set_text(quota_value_shadow, value);
         char reset_text[20];
         format_reset(quota_reset, reset_text, sizeof(reset_text));
-        snprintf(detail, sizeof(detail), "RESET  %s", reset_text);
-        lv_label_set_text(quota_detail, detail);
-        lv_bar_set_value(quota_bar, quota, LV_ANIM_OFF);
+        lv_label_set_text(quota_detail, reset_text);
+        lv_label_set_text(quota_detail_shadow, reset_text);
+        lv_bar_set_value(quota_bar, quota, LV_ANIM_ON);
     }
     if (secondary_quota >= 0) {
         char detail[32];
         int days = secondary_window / 1440;
         if (days > 0) {
-            snprintf(detail, sizeof(detail), "%dD  %d%%", days, secondary_quota);
+            snprintf(detail, sizeof(detail), "%d%%  %dD", secondary_quota, days);
         } else {
-            snprintf(detail, sizeof(detail), "%dH  %d%%",
-                     secondary_window / 60, secondary_quota);
+            snprintf(detail, sizeof(detail), "%d%%  %dH",
+                     secondary_quota, secondary_window / 60);
         }
         lv_label_set_text(secondary_label, detail);
+        lv_label_set_text(secondary_label_shadow, detail);
         char reset_text[20];
         format_reset(secondary_reset, reset_text, sizeof(reset_text));
-        snprintf(detail, sizeof(detail), "RESET %s", reset_text);
-        lv_label_set_text(secondary_reset_label, detail);
-        lv_bar_set_value(secondary_bar, secondary_quota, LV_ANIM_OFF);
+        lv_label_set_text(secondary_reset_label, reset_text);
+        lv_label_set_text(secondary_reset_shadow, reset_text);
+        lv_bar_set_value(secondary_bar, secondary_quota, LV_ANIM_ON);
     } else {
-        lv_label_set_text(secondary_label, "--%");
-        lv_label_set_text(secondary_reset_label, "RESET --/-- --:--");
+        lv_label_set_text(secondary_label, "--%  7D");
+        lv_label_set_text(secondary_label_shadow, "--%  7D");
+        lv_label_set_text(secondary_reset_label, "--/-- --:--");
+        lv_label_set_text(secondary_reset_shadow, "--/-- --:--");
         lv_bar_set_value(secondary_bar, 0, LV_ANIM_OFF);
     }
 }
 
-static void refresh_scene()
+static void scene_fade_cb(void *obj, int32_t opacity)
 {
-    lv_img_set_src(background_image, day_scene ? &prague_day : &prague_dusk);
+    lv_obj_set_style_img_opa((lv_obj_t *)obj, (lv_opa_t)opacity, LV_PART_MAIN);
+}
+
+static void refresh_scene(bool animate)
+{
+    int32_t target = day_scene ? LV_OPA_TRANSP : LV_OPA_COVER;
+    // The same pigeon sprites are gently darkened to match the dusk scene.
+    lv_opa_t tint = day_scene ? LV_OPA_TRANSP : LV_OPA_30;
+    lv_obj_set_style_img_recolor(pigeon_stand_image, NAVY, LV_PART_MAIN);
+    lv_obj_set_style_img_recolor_opa(pigeon_stand_image, tint, LV_PART_MAIN);
+    lv_obj_set_style_img_recolor(pigeon_fly_image, NAVY, LV_PART_MAIN);
+    lv_obj_set_style_img_recolor_opa(pigeon_fly_image, tint, LV_PART_MAIN);
+    lv_anim_del(dusk_image, scene_fade_cb);
+    if (!animate) {
+        scene_fade_cb(dusk_image, target);
+        return;
+    }
+    lv_anim_t fade;
+    lv_anim_init(&fade);
+    lv_anim_set_var(&fade, dusk_image);
+    lv_anim_set_exec_cb(&fade, scene_fade_cb);
+    lv_anim_set_values(&fade, lv_obj_get_style_img_opa(dusk_image, LV_PART_MAIN), target);
+    lv_anim_set_time(&fade, 400);
+    lv_anim_start(&fade);
+}
+
+static void pigeon_jump_step(void *obj, int32_t progress)
+{
+    // A 36-pixel parabolic hop, returning exactly to the original perch.
+    int32_t height = 144 * progress * (1000 - progress) / 1000000;
+    lv_obj_set_pos((lv_obj_t *)obj, 75, 310 - height);
+}
+
+static void pigeon_jump_done(lv_anim_t *anim)
+{
+    (void)anim;
+    lv_obj_set_pos(pigeon_stand_image, 75, 310);
+    pigeon_jumping = false;
+}
+
+static void pigeon_tap(lv_event_t *e)
+{
+    (void)e;
+    if (pigeon_jumping) return;
+    pigeon_jumping = true;
+    lv_anim_t jump;
+    lv_anim_init(&jump);
+    lv_anim_set_var(&jump, pigeon_stand_image);
+    lv_anim_set_exec_cb(&jump, pigeon_jump_step);
+    lv_anim_set_values(&jump, 0, 1000);
+    lv_anim_set_time(&jump, 650);
+    lv_anim_set_ready_cb(&jump, pigeon_jump_done);
+    lv_anim_start(&jump);
 }
 
 static void scene_tap(lv_event_t *e)
 {
     (void)e;
     day_scene = !day_scene;
-    refresh_scene();
-    status(day_scene ? "DAYLIGHT / PRAGUE" : "GOLDEN HOUR / PRAGUE");
+    refresh_scene(true);
 }
 
-static void button(lv_obj_t *parent, const char *text, int x, int y, int w,
-                   lv_event_cb_t cb)
+static void quota_tap(lv_event_t *e)
 {
-    lv_obj_t *o = lv_btn_create(parent);
-    lv_obj_set_pos(o, x, y);
-    lv_obj_set_size(o, w, 40);
-    lv_obj_set_style_bg_color(o, BLUE, LV_PART_MAIN);
-    lv_obj_set_style_border_width(o, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(o, GOLD, LV_PART_MAIN);
-    lv_obj_set_style_radius(o, 8, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(o, 0, LV_PART_MAIN);
-    lv_obj_add_event_cb(o, cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *t = label(o, text, 0, 0, w - 4, 24, &lv_font_montserrat_16, WHITE);
-    lv_obj_center(t);
+    (void)e;
+    first_fetch = true;
 }
 
 static void build_ui()
@@ -185,56 +232,67 @@ static void build_ui()
     background_image = lv_img_create(screen);
     lv_img_set_src(background_image, &prague_day);
     lv_obj_set_pos(background_image, 0, 0);
+    lv_obj_add_flag(background_image, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(background_image, scene_tap, LV_EVENT_CLICKED, NULL);
+    dusk_image = lv_img_create(screen);
+    lv_img_set_src(dusk_image, &prague_dusk);
+    lv_obj_set_pos(dusk_image, 0, 0);
+    lv_obj_set_style_img_opa(dusk_image, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_add_flag(dusk_image, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(dusk_image, scene_tap, LV_EVENT_CLICKED, NULL);
 
-    // Keep the right-hand sky clear so the Old Town Bridge Tower spires show.
+    // The pigeon is a separate touch target; background taps still change scene.
+    pigeon_stand_image = lv_img_create(screen);
+    lv_img_set_src(pigeon_stand_image, &pigeon_stand);
+    lv_obj_set_pos(pigeon_stand_image, 75, 310);
+    lv_obj_add_flag(pigeon_stand_image, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(pigeon_stand_image, pigeon_tap, LV_EVENT_CLICKED, NULL);
+    pigeon_fly_image = lv_img_create(screen);
+    lv_img_set_src(pigeon_fly_image, &pigeon_fly);
+    lv_obj_set_pos(pigeon_fly_image, 45, 261);
+    lv_obj_add_flag(pigeon_fly_image, LV_OBJ_FLAG_HIDDEN);
+
+    // Keep the event title on a dark strip; let the quota float on the photo.
     lv_obj_t *header = box(screen, 0, 0, 420, 68, NAVY, 0);
     lv_obj_set_style_bg_opa(header, LV_OPA_70, LV_PART_MAIN);
-    box(screen, 25, 15, 4, 33, GOLD, 2);
-    label(screen, "SOSP2026", 43, 17, 180, 32, &lv_font_montserrat_26, WHITE);
-    lv_obj_t *title = lv_img_create(screen);
-    lv_img_set_src(title, &prague_title);
-    lv_obj_set_pos(title, 230, 9);
-    box(screen, 24, 66, 372, 2, GOLD, 1);
+    box(header, 25, 15, 4, 33, GOLD, 2);
+    label(header, "SOSP2026", 43, 17, 180, 32, &lv_font_montserrat_26, WHITE);
+    label(header, "PRAGUE", 230, 17, 165, 32, &lv_font_montserrat_26, WHITE);
+    box(header, 25, 65, 370, 1, GOLD, 0);
 
-    lv_obj_t *hud = box(screen, 25, 88, 350, 206, NAVY, 12);
-    lv_obj_set_style_border_width(hud, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(hud, GOLD, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(hud, LV_OPA_70, LV_PART_MAIN);
-    label(hud, "CODEX REMAINING", 18, 12, 215, 23, &lv_font_montserrat_16, PALE);
-    quota_source = label(hud, "WAITING / LAN", 234, 15, 102, 20,
-                         &lv_font_montserrat_12, CYAN);
-    quota_value = label(hud, "--%", 18, 39, 155, 54, &lv_font_montserrat_44, WHITE);
-    quota_window_label = label(hud, "NO DATA", 184, 59, 148, 25,
-                               &lv_font_montserrat_16, PALE);
-    quota_detail = label(hud, "RESET --/-- --:--", 18, 100, 315, 25,
-                         &lv_font_montserrat_16, GOLD);
-    quota_bar = lv_bar_create(hud);
-    lv_obj_set_pos(quota_bar, 18, 131);
-    lv_obj_set_size(quota_bar, 314, 8);
+    lv_obj_t *quota_panel = box(screen, 0, 68, 360, 146, NAVY, 0);
+    lv_obj_set_style_bg_opa(quota_panel, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_add_flag(quota_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(quota_panel, quota_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *heading_shadow;
+    photo_label(quota_panel, "CODEX REMAINING", 25, 5, 205, 23,
+                &lv_font_montserrat_16, WHITE, &heading_shadow);
+    quota_fresh_dot = box(quota_panel, 328, 11, 8, 8, PALE, 4);
+    lv_obj_set_style_border_width(quota_fresh_dot, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(quota_fresh_dot, NAVY, LV_PART_MAIN);
+    quota_value = photo_label(quota_panel, "--%", 25, 27, 140, 54,
+                              &lv_font_montserrat_44, WHITE, &quota_value_shadow);
+    quota_detail = photo_label(quota_panel, "--/-- --:--", 175, 47, 165, 25,
+                               &lv_font_montserrat_16, GOLD, &quota_detail_shadow);
+    quota_bar = lv_bar_create(quota_panel);
+    lv_obj_set_pos(quota_bar, 25, 80);
+    lv_obj_set_size(quota_bar, 310, 7);
     lv_bar_set_range(quota_bar, 0, 100);
     lv_obj_set_style_bg_color(quota_bar, BLUE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(quota_bar, GOLD, LV_PART_INDICATOR);
-    box(hud, 18, 149, 314, 1, BLUE, 0);
-    secondary_label = label(hud, "--%", 18, 157, 132, 31,
-                            &lv_font_montserrat_26, WHITE);
-    secondary_reset_label = label(hud, "RESET --/-- --:--", 153, 160, 180, 26,
-                                  &lv_font_montserrat_16, PALE);
-    secondary_bar = lv_bar_create(hud);
-    lv_obj_set_pos(secondary_bar, 18, 191);
-    lv_obj_set_size(secondary_bar, 314, 7);
+    box(quota_panel, 25, 92, 310, 1, CYAN, 0);
+    secondary_label = photo_label(quota_panel, "--%  7D", 25, 98, 150, 31,
+                                  &lv_font_montserrat_26, WHITE, &secondary_label_shadow);
+    secondary_reset_label = photo_label(quota_panel, "--/-- --:--", 175, 105, 165, 23,
+                                        &lv_font_montserrat_16, PALE, &secondary_reset_shadow);
+    secondary_bar = lv_bar_create(quota_panel);
+    lv_obj_set_pos(secondary_bar, 25, 135);
+    lv_obj_set_size(secondary_bar, 310, 6);
     lv_bar_set_range(secondary_bar, 0, 100);
     lv_obj_set_style_bg_color(secondary_bar, BLUE, LV_PART_MAIN);
     lv_obj_set_style_bg_color(secondary_bar, CYAN, LV_PART_INDICATOR);
 
-    // Compact dock stays to the right of the pigeon and leaves the river open.
-    lv_obj_t *dock = box(screen, 340, 417, 440, 63, NAVY, 10);
-    lv_obj_set_style_bg_opa(dock, LV_OPA_70, LV_PART_MAIN);
-    button(screen, "DAY / DUSK", 351, 428, 151, scene_tap);
-    status_label = label(screen, "CHARLES BRIDGE", 520, 425, 242, 23,
-                         &lv_font_montserrat_16, WHITE);
-    label(screen, "PRAGUE / VLTAVA", 520, 449, 230, 20,
-          &lv_font_montserrat_14, GOLD);
-    refresh_scene();
+    refresh_scene(false);
     refresh_quota();
 }
 
@@ -246,7 +304,7 @@ static bool parse_quota(const String &payload)
     if (p < -1 || p > 100 || s < -1 || s > 100 ||
         pw < 0 || sw < 0 || !valid_reset_code(pr) ||
         !valid_reset_code(sr)) return false;
-    quota = p; quota_window = pw; quota_reset = pr;
+    quota = p; quota_reset = pr;
     secondary_quota = s; secondary_window = sw; secondary_reset = sr;
     quota_live = true;
     last_success = millis();
@@ -339,15 +397,6 @@ static void quota_network_tick()
     }
 }
 
-static void tick_cb(lv_timer_t *timer)
-{
-    (void)timer;
-    if (message_until && (int32_t)(millis() - message_until) >= 0) {
-        message_until = 0;
-        lv_label_set_text(status_label, "CHARLES BRIDGE");
-    }
-}
-
 void setup()
 {
     Serial.begin(115200);
@@ -359,7 +408,6 @@ void setup()
     ESP_ERROR_CHECK(lvgl_port_init(panel, touch));
     if (lvgl_port_lock(-1)) {
         build_ui();
-        lv_timer_create(tick_cb, 1000, NULL);
         lvgl_port_unlock();
     }
 }
