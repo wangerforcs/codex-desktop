@@ -15,12 +15,14 @@
 
 ## Arduino 准备
 
+初次配置请先看 [Waveshare ESP32-S3-Touch-LCD-4.3C Arduino 官方教程](https://docs.waveshare.net/ESP32-S3-Touch-LCD-4.3C/Arduino/)，其中有开发板包、LVGL 8.4.0 和 `lv_conf.h` 的安装说明。本项目的板型和分区选项还需按下面设置。
+
 1. 安装 Espressif ESP32 Arduino 开发板包（本项目用 3.1.1 验证）及 LVGL **8.4.0**。LVGL 9.x 的接口不兼容。
 2. 将 `config/lv_conf.h` 复制到 Arduino Sketchbook 的 `libraries` 目录，与 `lvgl` 文件夹并列，使布局为 `libraries/lv_conf.h` 与 `libraries/lvgl/`。不要覆盖其他项目专用配置而不备份。
 3. 将 `quota_config.example.h` 复制为 `quota_config.h`，填入 2.4 GHz Wi-Fi 的 SSID 和密码。`QUOTA_PC_IP` 默认留空，由板子自动发现电脑；不需要写 DHCP 地址。这个本地配置文件不会被 Git 提交。
-4. 在 Arduino IDE 打开 `codex_desktop.ino`。选择 `ESP32S3 Dev Module`、16 MB Flash、OPI PSRAM、USB CDC On Boot Enabled，以及适合 16 MB Flash 的分区方案。编译可能需要数分钟。
+4. 在 Arduino IDE 打开 `codex_desktop.ino`，手动选择开发板 **`ESP32S3 Dev Module`**、Flash Size **16MB**、PSRAM **OPI PSRAM**、USB CDC On Boot **Enabled**、Partition Scheme **`16M Flash (3MB APP/9.9MB FATFS)`**。编译可能需要数分钟。
 
-上传会替换设备当前固件；请先自行备份需要保留的内容。
+上传会替换设备当前固件；请先自行备份需要保留的内容，minimax原始内容在original_flash.bin。
 
 ## 电脑端运行
 
